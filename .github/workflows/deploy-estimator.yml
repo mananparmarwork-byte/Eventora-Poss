@@ -28,6 +28,10 @@ jobs:
           cache: npm
           cache-dependency-path: app/package-lock.json
 
+      - name: Setup Pages (detects the correct address automatically)
+        id: pages
+        uses: actions/configure-pages@v5
+
       - name: Install
         working-directory: app
         run: npm ci
@@ -38,12 +42,7 @@ jobs:
         env:
           VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
-          VITE_BASE_PATH: /
-
-      - name: Add custom domain file
-        if: ${{ vars.CUSTOM_DOMAIN != '' }}
-        working-directory: app
-        run: echo "${{ vars.CUSTOM_DOMAIN }}" > dist/CNAME
+          VITE_BASE_PATH: ${{ steps.pages.outputs.base_path }}/
 
       - name: Upload site
         uses: actions/upload-pages-artifact@v3

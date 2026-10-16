@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Link, Route, Switch, Router as WouterRouter, useLocation } from 'wouter';
+import { Link, Redirect, Route, Switch, Router as WouterRouter, useLocation } from 'wouter';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   getGetCatalogQueryKey,
@@ -1377,6 +1377,7 @@ function Router() {
   return (
     <RoutedErrorBoundary>
       <Switch>
+        <Route path="/"><Redirect to="/111" replace /></Route>
         <Route path="/111" component={EstimatorPage} />
         <Route path="/999" component={AdminPage} />
         <Route component={NotFound} />

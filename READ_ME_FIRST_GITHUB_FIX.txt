@@ -23,3 +23,23 @@ STEP 4 - Settings check (one time)
 STEP 5 - Delete the "site" folder from the repo (GitHub Desktop: delete the folder, commit, push).
 
 If the run still says "Waiting": open the run -> click the yellow "Review deployments" box -> tick github-pages -> Approve.
+
+BLANK WHITE PAGE FIX (v3)
+Cause: the site was built for the root address "/" but GitHub serves it at
+https://<username>.github.io/<repo-name>/ , so the JS/CSS files were not found.
+v3 workflow detects this automatically:
+  - CUSTOM_DOMAIN variable empty  -> uses /<repo-name>/
+  - CUSTOM_DOMAIN variable set    -> uses /
+Also: opening the main address now goes straight to the estimator (/111). Admin is /999.
+Your link without a custom domain:  https://mananparmarwork-byte.github.io/Eventora-Poss/
+
+v4 - BLANK PAGE, MOST RELIABLE FIX
+The workflow now asks GitHub itself for the correct address (actions/configure-pages),
+so the base path is always right for github.io/<repo>/ and for custom domains.
+The page now shows "Loading estimator..." while starting. If it stays blank, a red
+"Startup error" message is printed on the page itself - send me a screenshot of that.
+CUSTOM_DOMAIN variable is no longer needed. Set a custom domain in Settings -> Pages.
+
+IMPORTANT: you must update BOTH
+  1) .github/workflows/deploy-estimator.yml  (edit on github.com, paste the new text)
+  2) the app/ folder (push from GitHub Desktop)
