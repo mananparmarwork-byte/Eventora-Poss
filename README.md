@@ -1,25 +1,11 @@
-# Swagattam — Event Estimator (GitHub Pages)
+# Eventora OS
+Quotations, bookings, payments and professional PDF billing for event venues. See `HANDOFF.md` for status and next steps.
 
-This repository now contains **only the estimator** (the landing page `site/` has been removed).
-
-- `app/` — Event Estimate Studio (customer estimator + admin panel)
-  - `/111` customer estimator
-  - `/999` admin panel
-- `supabase/` — database setup SQL (same files as `app/supabase/`)
-- `.github/workflows/deploy.yml` — builds `app/` and deploys it to GitHub Pages on every push to `main`
-
-## Local development
 ```bash
-cd app && npm install && npm run dev
+npm install
+cp .env.example .env   # then fill in your Supabase URL and anon key
+npm run dev
+npm run build      # outputs dist/
 ```
-
-## Required GitHub configuration
-**Settings → Pages → Source:** GitHub Actions
-
-**Settings → Secrets and variables → Actions → Variables:**
-- `VITE_SUPABASE_URL`
-- `VITE_SUPABASE_ANON_KEY`
-- `CUSTOM_DOMAIN` (optional)
-
-## Supabase
-Run `schema.sql`, `rls.sql`, then the numbered files `01` … `06` in order (`seed.sql` optional) in the Supabase SQL editor.
+Admin dashboard: `/#/admin` · Public estimator: `/#/`
+Database: run `supabase/setup.sql` in Supabase, then see HANDOFF.md §4.5.

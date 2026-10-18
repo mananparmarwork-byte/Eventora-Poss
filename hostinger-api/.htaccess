@@ -1,0 +1,12 @@
+# Keep the config file private.
+<Files "config.php">
+  Require all denied
+</Files>
+Options -Indexes
+
+# Some hosts do not pass the Authorization header to PHP. This fixes it.
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteCond %{HTTP:Authorization} .
+  RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+</IfModule>

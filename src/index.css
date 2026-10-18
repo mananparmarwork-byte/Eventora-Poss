@@ -1,0 +1,60 @@
+@import "tailwindcss";
+
+/* Eventora OS — Midnight Luxury Theme */
+@theme {
+  --color-brand: #0B1733;
+  --color-obsidian: #080B12;
+  --color-gold: #E6B84A;
+  --color-gold-hover: #F0C966;
+  --color-ivory: #F7F5EF;
+  --color-steel-blue: #647DA8;
+
+  --color-page: #0D1424;
+  --color-sidebar: #0B1733;
+  --color-surface: #18243A;
+  --color-surface-hover: #22314A;
+  --color-input: #080B12;
+  --color-border: #33415A;
+
+  --color-text: #F7F5EF;
+  --color-text-secondary: #B8C2D4;
+  --color-text-disabled: #8D9AB0;
+  --color-text-on-gold: #080B12;
+
+  --color-success: #4F9B73;
+  --color-warning: #E9AE45;
+  --color-error: #D66B70;
+  --color-info: #8CA9D6;
+  --color-success-bg: #183B2A;
+  --color-warning-bg: #493719;
+  --color-error-bg: #482329;
+
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: "Playfair Display", Georgia, "Times New Roman", serif;
+}
+
+html, body, #root { height: 100%; }
+body {
+  margin: 0;
+  background: var(--color-page);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+* { border-color: var(--color-border); }
+::selection { background: rgba(230, 184, 74, 0.35); }
+:focus-visible { outline: 2px solid var(--color-gold); outline-offset: 2px; }
+input[type="date"], input[type="time"] { color-scheme: dark; }
+input::placeholder, textarea::placeholder { color: var(--color-text-disabled); }
+select option { background: #18243A; color: #F7F5EF; }
+
+/* thin dark scrollbars */
+* { scrollbar-width: thin; scrollbar-color: #33415A transparent; }
+
+.tabular { font-variant-numeric: tabular-nums; }
+.gold-rule { height: 1px; background: linear-gradient(90deg, transparent, rgba(230,184,74,.55), transparent); }
+.card-glow { box-shadow: 0 1px 0 rgba(255,255,255,.03) inset, 0 18px 40px rgba(0,0,0,.28); }
+
+@keyframes fade-up { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.fade-up { animation: fade-up .3s ease both; }
+@media (prefers-reduced-motion: reduce) { .fade-up { animation: none; } }
