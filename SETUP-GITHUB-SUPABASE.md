@@ -29,3 +29,10 @@ The SQL files are in the `supabase/` folder of this zip:
 
 There is no demo data: the app starts empty and everything you enter is saved in your Supabase database.
 If you see "Connect your database", the two variables in Part 2 step 3 are missing — add them and re-run the deploy.
+
+## If the Actions tab is empty (hidden .github folder was not uploaded)
+Folders that start with a dot (.github) are hidden on Mac and are often skipped by drag-and-drop uploads.
+Fix: in your GitHub repository → Add file → Create new file → type the name exactly as
+    .github/workflows/deploy.yml
+(typing the slashes creates the folders) → paste the contents of `github-workflow-copy/deploy.yml` → Commit.
+Then open the Actions tab; the deploy starts by itself. (Settings → Pages → Source must be "GitHub Actions".)
