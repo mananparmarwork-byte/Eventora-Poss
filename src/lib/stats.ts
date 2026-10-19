@@ -1,34 +1,56 @@
 import { quoteDates, quotePaymentState } from './pricing';
-import { monthKey, todayISO } from './format';
+import { todayISO } from './format';
+import { bucketKey, dayOf, inPeriod, type Resolved } from './range';
 import type { Quote } from './types';
 
-export function lastMonths(count: number): string[] {
-  const out: string[] = [];
-  const d = new Date(); d.setDate(1);
-  for (let i = count - 1; i >= 0; i--) {
-    const m = new Date(d.getFullYear(), d.getMonth() - i, 1);
-    out.push(`${m.getFullYear()}-${String(m.getMonth() + 1).padStart(2, '0')}`);
-  }
-  return out;
-}
+export const greeting = () => {
+  const h = new Date().getHours();
+  return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
+};
 
-export const shortMonth = (key: string) => new Date(`${key}-01T00:00:00`).toLocaleDateString('en-IN', { month: 'short' });
-
-/** Payments received per month. Bills with an advance typed on the bill (no payment log) count on the day they were created. */
-export function revenueByMonth(quotes: Quote[], months: string[]): number[] {
-  const totals: Record<string, number> = {};
+/** Every rupee received, with the moment it was received. Advances typed on an old bill (no payment log) count on the day the bill was created. */
+export function paymentEvents(quotes: Quote[]): { at: string; amount: number }[] {
+  const out: { at: string; amount: number }[] = [];
   quotes.forEach((q) => {
     const log = q.pricing.payments ?? [];
     const logged = log.reduce((a, p) => a + p.amount, 0);
-    log.forEach((p) => { const k = monthKey(p.paidAt); totals[k] = (totals[k] ?? 0) + p.amount; });
+    log.forEach((p) => out.push({ at: p.paidAt, amount: p.amount }));
     const received = quotePaymentState(q.pricing).received;
-    if (received > logged) { const k = monthKey(q.createdAt); totals[k] = (totals[k] ?? 0) + (received - logged); }
+    if (received > logged) out.push({ at: q.createdAt, amount: received - logged });
   });
-  return months.map((m) => totals[m] ?? 0);
+  return out;
 }
 
-export const countByMonth = (quotes: Quote[], months: string[], pick: (q: Quote) => boolean) =>
-  months.map((m) => quotes.filter((q) => pick(q) && monthKey(q.createdAt) === m).length);
+export function earliestDate(quotes: Quote[]): string | undefined {
+  const all = [...quotes.map((q) => dayOf(q.createdAt)), ...paymentEvents(quotes).map((p) => dayOf(p.at))];
+  return all.length ? all.sort()[0] : undefined;
+}
+
+export type Metric = 'revenue' | 'quotations' | 'booked';
+
+export type PeriodStats = { quotations: number; booked: number; revenue: number };
+export function totalsForPeriod(quotes: Quote[], p: { from: string; to: string }): PeriodStats {
+  const made = quotes.filter((q) => inPeriod(q.createdAt, p));
+  return {
+    quotations: made.length,
+    booked: made.filter((q) => q.status === 'confirmed').length,
+    revenue: paymentEvents(quotes).filter((e) => inPeriod(e.at, p)).reduce((a, e) => a + e.amount, 0),
+  };
+}
+
+/** One value per bucket for the chosen metric. */
+export function seriesFor(quotes: Quote[], r: Resolved, metric: Metric): number[] {
+  const index = new Map(r.buckets.map((b, i) => [b.key, i]));
+  const values = r.buckets.map(() => 0);
+  const put = (iso: string, amount: number) => {
+    if (!inPeriod(iso, r)) return;
+    const i = index.get(bucketKey(iso, r.gran));
+    if (i !== undefined) values[i] += amount;
+  };
+  if (metric === 'revenue') paymentEvents(quotes).forEach((e) => put(e.at, e.amount));
+  else quotes.filter((q) => metric === 'quotations' || q.status === 'confirmed').forEach((q) => put(q.createdAt, 1));
+  return values;
+}
 
 export function upcoming(quotes: Quote[], limit = 6) {
   const today = todayISO();
@@ -40,18 +62,4 @@ export function upcoming(quotes: Quote[], limit = 6) {
     .slice(0, limit);
 }
 
-export type Activity = { id: string; at: string; kind: 'enquiry' | 'payment' | 'booked'; title: string; detail: string; reference: string };
-
-export function activityFeed(quotes: Quote[], limit = 8): Activity[] {
-  const items: Activity[] = [];
-  quotes.forEach((q) => {
-    items.push({ id: `e-${q.id}`, at: q.createdAt, kind: 'enquiry', title: 'New quotation created', detail: `${q.customer.name} · ${q.customer.eventType}`, reference: q.reference });
-    (q.pricing.payments ?? []).forEach((p) => items.push({ id: `p-${p.id}`, at: p.paidAt, kind: 'payment', title: 'Payment received', detail: `${q.customer.name} · ${p.method.toUpperCase()} ₹${Math.round(p.amount).toLocaleString('en-IN')}`, reference: q.reference }));
-  });
-  return items.sort((a, b) => b.at.localeCompare(a.at)).slice(0, limit);
-}
-
-export const greeting = () => {
-  const h = new Date().getHours();
-  return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
-};
+export const delta = (now: number, before: number): number | null => (before === 0 ? (now === 0 ? 0 : null) : Math.round(((now - before) / before) * 100));

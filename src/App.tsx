@@ -12,6 +12,7 @@ import { CalendarPage } from '@/pages/admin/CalendarPage';
 import { CatalogPage } from '@/pages/admin/CatalogPage';
 import { Reports } from '@/pages/admin/Reports';
 import { SettingsPage } from '@/pages/admin/SettingsPage';
+import { ActivityPage } from '@/pages/admin/ActivityPage';
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
   state = { error: null as Error | null };
@@ -69,15 +70,16 @@ export default function App() {
           <Switch>
             <Route path="/"><Estimator /></Route>
             <Route path="/login"><Login /></Route>
-            <Route path="/admin"><AdminLayout><Overview /></AdminLayout></Route>
+            <Route path="/admin"><AdminLayout ownerOnly><Overview /></AdminLayout></Route>
             <Route path="/admin/quotes"><AdminLayout><Quotes /></AdminLayout></Route>
             <Route path="/admin/quotes/:reference">{(p) => <AdminLayout><Quotes selected={decodeURIComponent(p.reference)} /></AdminLayout>}</Route>
             <Route path="/admin/new"><AdminLayout><Estimator embedded /></AdminLayout></Route>
             <Route path="/admin/edit/:reference">{(p) => <AdminLayout><Estimator embedded editRef={decodeURIComponent(p.reference)} /></AdminLayout>}</Route>
             <Route path="/admin/calendar"><AdminLayout><CalendarPage /></AdminLayout></Route>
-            <Route path="/admin/catalog"><AdminLayout><CatalogPage /></AdminLayout></Route>
-            <Route path="/admin/reports"><AdminLayout><Reports /></AdminLayout></Route>
-            <Route path="/admin/settings"><AdminLayout><SettingsPage /></AdminLayout></Route>
+            <Route path="/admin/catalog"><AdminLayout ownerOnly><CatalogPage /></AdminLayout></Route>
+            <Route path="/admin/activity"><AdminLayout ownerOnly><ActivityPage /></AdminLayout></Route>
+            <Route path="/admin/reports"><AdminLayout ownerOnly><Reports /></AdminLayout></Route>
+            <Route path="/admin/settings"><AdminLayout ownerOnly><SettingsPage /></AdminLayout></Route>
             <Route path="/admin/:rest*"><Redirect to="/admin" /></Route>
             <Route><NotFound /></Route>
           </Switch>

@@ -4,7 +4,7 @@ import { ArrowLeft, CalendarCheck, Download, FileText, Loader2, MessageCircle, P
 import { Badge, Button, Card, CardHeader, EmptyState, Input, Spinner, useUi } from '@/components/ui';
 import { PaymentBadge, StatusBadge } from '@/components/PaymentBadge';
 import { PaymentPanel } from '@/components/PaymentPanel';
-import { useBusiness, useDeleteQuote, usePayment, useQuote, useQuotes, useSetStatus } from '@/lib/api';
+import { useBusiness, useDeleteQuote, usePayment, usePermissions, useQuote, useQuotes, useSession, useSetStatus } from '@/lib/api';
 import { fmtDate, formatEventDates, inr, num, cn } from '@/lib/format';
 import { durationText, findConflicts, scheduleLines, timeText } from '@/lib/booking';
 import { discountLabel, quoteAdvance, quoteDates, quotePaymentState } from '@/lib/pricing';
@@ -108,6 +108,11 @@ function Detail({ reference }: { reference: string }) {
   const { payment } = usePayment();
   const setStatus = useSetStatus();
   const del = useDeleteQuote();
+  const { isAdmin } = useSession();
+  const { permissions } = usePermissions();
+  const canEdit = isAdmin || permissions.editBills;
+  const canDelete = isAdmin || permissions.deleteBills;
+  const canBook = isAdmin || permissions.markBooked;
   const [busy, setBusy] = useState<BillKind | null>(null);
 
   if (isLoading) return <Spinner label="Loading bill" />;
@@ -126,7 +131,7 @@ function Detail({ reference }: { reference: string }) {
       const conflicts = findConflicts({ reference: quote.reference, dates, slots: customer.eventSlots }, others);
       if (conflicts.length) { toast(`Cannot book: ${formatEventDates([conflicts[0].date])} ${timeText(conflicts[0].range)} is already taken by ${conflicts[0].name} (${conflicts[0].reference}).`, 'error'); return; }
     }
-    setStatus.mutate({ reference: quote.reference, status: booked ? 'new' : 'confirmed' }, { onSuccess: () => toast(booked ? 'Booking released.' : 'Marked as booked. The dates are now blocked.'), onError: (e) => toast(e.message, 'error') });
+    setStatus.mutate({ quote, status: booked ? 'new' : 'confirmed' }, { onSuccess: () => toast(booked ? 'Booking released.' : 'Marked as booked. The dates are now blocked.'), onError: (e) => toast(e.message, 'error') });
   };
 
   const pdf = async (kind: BillKind) => {
@@ -137,8 +142,8 @@ function Detail({ reference }: { reference: string }) {
   };
 
   const remove = async () => {
-    if (!(await confirm({ title: `Delete bill ${quote.reference}?`, text: 'This permanently removes the quotation and its payment history.', confirmLabel: 'Delete bill', danger: true }))) return;
-    del.mutate(quote.reference, { onSuccess: () => { toast('Bill deleted.', 'info'); navigate('/admin/quotes'); }, onError: (e) => toast(e.message, 'error') });
+    if (!(await confirm({ title: `Delete bill ${quote.reference}?`, text: isAdmin ? 'This permanently removes the quotation and its payment history. The deletion is recorded in Activity.' : 'This removes the quotation and its payment history. The owner will see this in the activity log, and the bill number will not be used again.', confirmLabel: 'Delete bill', danger: true }))) return;
+    del.mutate(quote, { onSuccess: () => { toast('Bill deleted.', 'info'); navigate('/admin/quotes'); }, onError: (e) => toast(e.message, 'error') });
   };
 
   const wa = () => window.open(whatsappLink(customer.mobile, `Hello ${customer.name}, this is ${business.name} regarding your ${customer.eventType.toLowerCase()} (Bill ${quote.reference}). Grand total ${inr(pricing.grandTotal)}${pay.balance > 0 ? `, balance due ${inr(pay.balance)}` : ', paid in full'}.`), '_blank');
@@ -152,12 +157,12 @@ function Detail({ reference }: { reference: string }) {
           <p className="mt-1 text-sm text-text-secondary"><span className="font-mono text-gold">{quote.reference}</span> · {customer.eventType} · created {fmtDate(quote.createdAt)}</p>
         </div>
         <div className="flex flex-wrap gap-2.5">
-          <Button variant={booked ? 'soft' : 'gold'} onClick={toggleBooked} disabled={setStatus.isPending}>{booked ? <><Undo2 size={15} /> Release booking</> : <><CalendarCheck size={15} /> Mark as booked</>}</Button>
-          <Link href={`/admin/edit/${encodeURIComponent(quote.reference)}`}><Button variant="outline"><Pencil size={15} /> Edit</Button></Link>
+          {canBook && <Button variant={booked ? 'soft' : 'gold'} onClick={toggleBooked} disabled={setStatus.isPending}>{booked ? <><Undo2 size={15} /> Release booking</> : <><CalendarCheck size={15} /> Mark as booked</>}</Button>}
+          {canEdit && <Link href={`/admin/edit/${encodeURIComponent(quote.reference)}`}><Button variant="outline"><Pencil size={15} /> Edit</Button></Link>}
           <Button variant="outline" onClick={() => pdf('quotation')} disabled={busy !== null}>{busy === 'quotation' ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />} Quotation PDF</Button>
           <Button variant="outline" onClick={() => pdf('invoice')} disabled={busy !== null}>{busy === 'invoice' ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />} Invoice PDF</Button>
           <Button variant="ghost" onClick={wa}><MessageCircle size={15} /></Button>
-          <Button variant="danger" onClick={remove}><Trash2 size={15} /></Button>
+          {canDelete && <Button variant="danger" onClick={remove} aria-label="Delete bill"><Trash2 size={15} /></Button>}
         </div>
       </div>
 

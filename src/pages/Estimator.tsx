@@ -4,7 +4,7 @@ import { ArrowLeft, Check, ChevronRight, Copy, Download, Loader2, LogIn, Message
 import { Brand } from '@/components/Logo';
 import { Button, Card, Field, Input, Select, Spinner, Switch, useUi } from '@/components/ui';
 import { DatePicker } from '@/components/DatePicker';
-import { useBookedTimes, useBusiness, useCatalog, useCreateQuote, usePayment, useQuote, useQuotes, useSession, useUpdateQuote } from '@/lib/api';
+import { useBookedTimes, useBusiness, useCatalog, useCreateQuote, useNextBillNumber, usePayment, usePermissions, useQuote, useSession, useUpdateQuote } from '@/lib/api';
 import { hasAnySlots, isRangeComplete, isRangeValid, normalizeEventSlots, normalizeRange, occupancyEntries, rangesOverlap, rangesText, scheduleLines } from '@/lib/booking';
 import { cn, formatEventDates, inr, localISODate, num, parseEventDates } from '@/lib/format';
 import { computeTotals, discountLabel, lineTotal, quoteAdvance, quoteDates } from '@/lib/pricing';
@@ -29,12 +29,13 @@ const eventTypeLabel = (d: Details) => (d.eventType === 'Other' ? d.otherEventTy
 export function Estimator({ embedded = false, editRef = '' }: { embedded?: boolean; editRef?: string }) {
   const { toast, confirm } = useUi();
   const [, navigate] = useLocation();
-  const { session } = useSession();
+  const { session, isAdmin } = useSession();
+  const { permissions } = usePermissions();
   const { business } = useBusiness();
   const { payment } = usePayment();
   const catalogQuery = useCatalog();
   const bookedQuery = useBookedTimes();
-  const quotesQuery = useQuotes();
+  const nextBill = useNextBillNumber(Boolean(session) && !editRef);
   const createQuote = useCreateQuote();
   const updateQuote = useUpdateQuote();
   const editing = Boolean(editRef);
@@ -68,7 +69,7 @@ export function Estimator({ embedded = false, editRef = '' }: { embedded?: boole
       const raw = editing ? null : window.localStorage.getItem(DRAFT_KEY);
       if (raw) {
         const d = JSON.parse(raw) as Partial<Draft>;
-        if (d.details) setDetails((cur) => ({ ...cur, ...d.details }));
+        if (d.details) setDetails((cur) => ({ ...cur, ...d.details, billNumber: '' }));
         if (d.selections) setSelections(d.selections);
         if (typeof d.gstEnabled === 'boolean') setGstEnabled(d.gstEnabled);
         if (typeof d.gstRate === 'number') setGstRate(Math.min(28, Math.max(0, d.gstRate)));
@@ -94,12 +95,10 @@ export function Estimator({ embedded = false, editRef = '' }: { embedded?: boole
     } catch { /* storage blocked: the form still works */ }
   }, [details, selections, gstEnabled, gstRate, gstVisible, custGstVisible, slots, showCostPerGuest, discountEnabled, discountPercent, discountFlat, advancePaid, advanceAmount, hydrated, editing, saved]);
 
-  /* ---- suggest the next bill number (admins can see existing bills) ---- */
-  useEffect(() => {
-    if (editing || !embedded || details.billNumber || !quotesQuery.data) return;
-    const nums = quotesQuery.data.map((q) => Number(/(\d+)$/.exec(q.reference)?.[1])).filter((n) => Number.isFinite(n));
-    setDetails((d) => (d.billNumber ? d : { ...d, billNumber: `EV-${(nums.length ? Math.max(...nums) : 1000) + 1}` }));
-  }, [quotesQuery.data, editing, embedded, details.billNumber]);
+  /* ---- bill number: filled in automatically (read-only for employees). The owner may type their own. ---- */
+  const autoNumber = nextBill.data ?? '';
+  const shownNumber = editing ? details.billNumber : details.billNumber || autoNumber;
+  const ownerOverride = isAdmin && !editing && details.billNumber.trim() !== '' && details.billNumber.trim() !== autoNumber ? details.billNumber.trim() : '';
 
   /* ---- load a saved bill for editing ---- */
   useEffect(() => {
@@ -195,14 +194,14 @@ export function Estimator({ embedded = false, editRef = '' }: { embedded?: boole
       }
     }
     if (!Number.isInteger(guests) || guests <= 0) e.guests = 'Guests must be more than zero.';
-    if (!details.billNumber.trim()) e.billNumber = 'Enter a bill number.';
+    if (editing && !details.billNumber.trim()) e.billNumber = 'Enter a bill number.';
     setErrors(e);
     if (Object.keys(e).length) toast('Please fix the highlighted fields.', 'error');
     return Object.keys(e).length === 0;
   };
 
   const buildInput = (): QuoteInput => ({
-    reference: details.billNumber.trim(),
+    reference: ownerOverride || shownNumber.trim() || 'Assigned on save',
     customer: { name: details.name.trim(), mobile: details.mobile.trim(), eventType: eventTypeLabel(details), eventDate: dates[0] ?? '', eventDates: dates, eventSlots: slotsForDates, guests, gstNumber: details.customerGstNumber.trim(), hall: business.name },
     services: lines.map((l) => ({ id: l.id, name: l.name, category: l.categoryName, subcategory: l.subcategoryName, pricingType: l.pricingType, quantity: l.quantity, unitPrice: l.price, total: l.total, description: l.description })),
     pricing: {
@@ -226,10 +225,10 @@ export function Estimator({ embedded = false, editRef = '' }: { embedded?: boole
     const done = (q: Quote) => {
       setSaved(q);
       try { window.localStorage.removeItem(DRAFT_KEY); } catch { /* ignore */ }
-      toast(editing ? 'Changes saved.' : 'Quotation saved.');
+      toast(editing ? 'Changes saved.' : `Bill ${q.reference} saved.`);
     };
-    if (editing) updateQuote.mutate({ reference: editRef, input }, { onSuccess: () => done({ ...(editQuote as Quote), ...input }), onError: (err) => toast(err.message, 'error') });
-    else createQuote.mutate(input, { onSuccess: (q) => done(q), onError: (err) => toast(err.message, 'error') });
+    if (editing) updateQuote.mutate({ reference: editRef, input, before: editQuote as Quote }, { onSuccess: () => done({ ...(editQuote as Quote), ...input }), onError: (err) => toast(err.message, 'error') });
+    else createQuote.mutate({ input, overrideRef: ownerOverride || undefined }, { onSuccess: (q) => done(q), onError: (err) => toast(err.message, 'error') });
   };
 
   const downloadPdf = async () => {
@@ -247,7 +246,7 @@ export function Estimator({ embedded = false, editRef = '' }: { embedded?: boole
     const svc = lines.map((l) => `• ${l.name}${l.pricingType === 'perPerson' ? ` (${guests} guests)` : l.pricingType === 'perUnit' ? ` (qty ${l.quantity})` : ''}: ${inr(l.total)}`).join('\n');
     return [
       `Hello ${business.name}, I would like to discuss this quotation.`, '',
-      `Bill No: ${details.billNumber || '—'}`, `Customer: ${details.name || '—'}`, `Mobile: ${details.mobile || '—'}`, `Event: ${eventTypeLabel(details) || '—'}`, sched, `Guests: ${guests}`, '',
+      `Bill No: ${shownNumber || '—'}`, `Customer: ${details.name || '—'}`, `Mobile: ${details.mobile || '—'}`, `Event: ${eventTypeLabel(details) || '—'}`, sched, `Guests: ${guests}`, '',
       svc || 'No services selected', '',
       `Subtotal: ${inr(totals.subtotal)}`, totals.discountAmount > 0 ? `${discountLabel(totals.discountPercent, totals.discountFlat)}: -${inr(totals.discountAmount)}` : '', gstEnabled ? `GST (${gstRate}%): ${inr(totals.gstAmount)}` : '',
       `Grand total: ${inr(totals.grandTotal)}`, totals.advance.paid ? `Advance paid: ${inr(totals.advance.amount)}\nBalance: ${inr(totals.advance.balance)}` : '',
@@ -292,7 +291,9 @@ export function Estimator({ embedded = false, editRef = '' }: { embedded?: boole
             </Field>
             {details.eventType === 'Other' ? <Field label="Occasion" required error={errors.otherEventType}><Input value={details.otherEventType} onChange={(e) => set('otherEventType', e.target.value)} placeholder="e.g. Baby shower" /></Field> : <div className="hidden sm:block" />}
             <Field label="Number of guests" required error={errors.guests} hint="Food is priced per guest"><Input type="number" min={1} value={details.guests} onChange={(e) => set('guests', e.target.value)} inputMode="numeric" /></Field>
-            <Field label="Bill number" required error={errors.billNumber} hint={editing ? 'Locked' : 'Must be unique'}><Input value={details.billNumber} onChange={(e) => set('billNumber', e.target.value)} disabled={editing} placeholder="EV-1001" /></Field>
+            <Field label="Bill number" error={errors.billNumber} hint={editing ? 'Locked' : isAdmin ? 'Automatic · you can change it' : session ? 'Automatic' : 'Given when saved'}>
+              <Input value={shownNumber} onChange={(e) => set('billNumber', e.target.value)} readOnly={!isAdmin || editing} disabled={editing || !session} placeholder={session ? 'Loading…' : 'Assigned when saved'} className={cn('font-mono', (!isAdmin || editing) && 'cursor-not-allowed text-gold')} aria-readonly={!isAdmin || editing} />
+            </Field>
             <Field as="div" label="Event date & time" required className="sm:col-span-2"><DatePicker value={details.eventDate} slots={slots} booked={booked} error={errors.eventDate} allowPast={editQuote ? quoteDates(editQuote.customer) : []} onChange={(v) => { set('eventDate', v); }} onSlotsChange={setSlots} /></Field>
             <Field label="Customer GST number" hint="Optional · shown on the bill"><Input value={details.customerGstNumber} onChange={(e) => set('customerGstNumber', e.target.value.toUpperCase().slice(0, 15))} placeholder="22AAAAA0000A1Z5" /></Field>
           </div>
@@ -357,7 +358,7 @@ export function Estimator({ embedded = false, editRef = '' }: { embedded?: boole
           <div className="border-b border-border/70 px-5 py-4"><p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-gold">Step 3</p><h2 className="text-base font-semibold text-text">Pricing options</h2></div>
           <div className="grid gap-6 p-5 lg:grid-cols-2">
             <div className="space-y-4">
-              <Switch checked={discountEnabled} onChange={setDiscountEnabled} label="Apply a discount" description="Taken off the subtotal before GST" />
+              <Switch checked={discountEnabled} onChange={setDiscountEnabled} disabled={!isAdmin && !permissions.discounts} label="Apply a discount" description={!isAdmin && !permissions.discounts ? 'Only the owner can give discounts' : 'Taken off the subtotal before GST'} />
               <div className="grid grid-cols-2 gap-3">
                 <Field label="Percentage" hint="e.g. 10"><Input type="number" min={0} max={100} value={discountPercent} onChange={(e) => setDiscountPercent(e.target.value)} disabled={!discountEnabled} /></Field>
                 <Field label="Flat amount (₹)"><Input type="number" min={0} value={discountFlat} onChange={(e) => setDiscountFlat(e.target.value)} disabled={!discountEnabled} /></Field>

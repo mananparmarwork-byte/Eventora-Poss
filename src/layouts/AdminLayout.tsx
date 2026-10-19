@@ -1,29 +1,32 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Link, Redirect, useLocation } from 'wouter';
-import { BarChart3, CalendarDays, ChevronsLeft, ChevronsRight, FileText, Layers, LayoutDashboard, LogOut, Menu, Plus, Settings, X } from 'lucide-react';
+import { BarChart3, CalendarDays, ChevronsLeft, ChevronsRight, FileClock, FilePlus2, FileText, Layers, LayoutDashboard, LogOut, Menu, Plus, Settings, X } from 'lucide-react';
 import { Brand } from '@/components/Logo';
 import { Button, Spinner, useUi } from '@/components/ui';
 import { signOut, useSession } from '@/lib/api';
 import { cn, initials } from '@/lib/format';
 
+// `owner: true` = only the owner sees it. Employees get: New bill, Bills (take payments), Calendar.
 const NAV = [
-  { href: '/admin', label: 'Overview', icon: LayoutDashboard, exact: true },
-  { href: '/admin/quotes', label: 'Quotations', icon: FileText },
+  { href: '/admin', label: 'Overview', icon: LayoutDashboard, exact: true, owner: true },
+  { href: '/admin/new', label: 'New bill', icon: FilePlus2, staffOnly: true },
+  { href: '/admin/quotes', label: 'Quotations', staffLabel: 'Bills & payments', icon: FileText },
   { href: '/admin/calendar', label: 'Calendar', icon: CalendarDays },
-  { href: '/admin/catalog', label: 'Catalog', icon: Layers },
-  { href: '/admin/reports', label: 'Reports', icon: BarChart3 },
-  { href: '/admin/settings', label: 'Settings', icon: Settings },
-];
+  { href: '/admin/activity', label: 'Activity', icon: FileClock, owner: true },
+  { href: '/admin/catalog', label: 'Catalog', icon: Layers, owner: true },
+  { href: '/admin/reports', label: 'Reports', icon: BarChart3, owner: true },
+  { href: '/admin/settings', label: 'Settings', icon: Settings, owner: true },
+] as { href: string; label: string; staffLabel?: string; icon: typeof Layers; exact?: boolean; owner?: boolean; staffOnly?: boolean }[];
 
 const TITLES: [string, string][] = [
-  ['/admin/new', 'New quotation'], ['/admin/edit', 'Edit quotation'], ['/admin/quotes', 'Quotations'], ['/admin/calendar', 'Calendar'],
+  ['/admin/new', 'New quotation'], ['/admin/edit', 'Edit quotation'], ['/admin/quotes', 'Quotations'], ['/admin/calendar', 'Calendar'], ['/admin/activity', 'Activity'],
   ['/admin/catalog', 'Catalog'], ['/admin/reports', 'Reports'], ['/admin/settings', 'Settings'], ['/admin', 'Overview'],
 ];
 
 function readCollapsed() { try { return window.localStorage.getItem('eventora-sidebar') === '1'; } catch { return false; } }
 
-export function AdminLayout({ children }: { children: ReactNode }) {
-  const { session, loading } = useSession();
+export function AdminLayout({ children, ownerOnly = false }: { children: ReactNode; ownerOnly?: boolean }) {
+  const { session, loading, isAdmin } = useSession();
   const [location, navigate] = useLocation();
   const [collapsed, setCollapsed] = useState(readCollapsed);
   const [drawer, setDrawer] = useState(false);
@@ -34,6 +37,8 @@ export function AdminLayout({ children }: { children: ReactNode }) {
 
   if (loading) return <div className="min-h-dvh bg-page"><Spinner label="Checking your session" /></div>;
   if (!session) return <Redirect to="/login" />;
+  if (ownerOnly && !isAdmin) return <Redirect to="/admin/new" />;
+  const items = NAV.filter((i) => (isAdmin ? !i.staffOnly : !i.owner));
 
   const title = TITLES.find(([p]) => location.startsWith(p))?.[1] ?? 'Eventora OS';
   const isActive = (item: (typeof NAV)[number]) => (item.exact ? location === item.href : location.startsWith(item.href));
@@ -42,16 +47,16 @@ export function AdminLayout({ children }: { children: ReactNode }) {
     <div className="flex h-full flex-col">
       <div className={cn('flex h-[72px] items-center border-b border-border/60 px-5', compact && 'justify-center px-0')}><Brand collapsed={compact} /></div>
       <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4" aria-label="Main">
-        {NAV.map((item) => {
+        {items.map((item) => {
           const active = isActive(item);
           const Icon = item.icon;
           return (
-            <Link key={item.href} href={item.href} title={compact ? item.label : undefined}
+            <Link key={item.href} href={item.href} title={compact ? (!isAdmin && item.staffLabel) || item.label : undefined}
               className={cn('group relative flex h-11 items-center gap-3 rounded-xl px-3.5 text-sm font-medium transition-colors', compact && 'justify-center px-0',
                 active ? 'bg-gold/12 text-gold' : 'text-text-secondary hover:bg-surface hover:text-text')}>
               {active && <span className="absolute left-0 top-2.5 h-6 w-[3px] rounded-r bg-gold" />}
               <Icon size={19} className="shrink-0" />
-              {!compact && <span className="truncate">{item.label}</span>}
+              {!compact && <span className="truncate">{(!isAdmin && item.staffLabel) || item.label}</span>}
             </Link>
           );
         })}
@@ -62,6 +67,7 @@ export function AdminLayout({ children }: { children: ReactNode }) {
           {!compact && (
             <div className="min-w-0 flex-1">
               <p className="truncate text-xs font-semibold text-text">{session.email}</p>
+              <p className="text-[10px] uppercase tracking-wide text-gold">{isAdmin ? 'Owner' : 'Employee'}</p>
               <button type="button" onClick={async () => { await signOut(); toast('Signed out', 'info'); navigate('/login'); }} className="flex items-center gap-1 text-[11px] text-text-secondary hover:text-gold"><LogOut size={12} /> Sign out</button>
             </div>
           )}

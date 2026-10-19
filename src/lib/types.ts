@@ -45,7 +45,7 @@ export type QuoteCustomer = {
 
 export type PaymentMethod = 'upi' | 'cash' | 'bank';
 export type PaymentKind = 'advance' | 'full';
-export type QuotePayment = { id: string; amount: number; method: PaymentMethod; kind: PaymentKind; paidAt: string; note?: string };
+export type QuotePayment = { id: string; amount: number; method: PaymentMethod; kind: PaymentKind; paidAt: string; note?: string; by?: string };
 
 export type QuotePricing = {
   foodPerPlate: number;
@@ -99,3 +99,37 @@ export type PaymentSettings = {
   ifsc: string;
   branch: string;
 };
+
+/* ------------------------------------------------------------ Roles & audit --- */
+export type Role = 'admin' | 'staff';
+export type Session = { email: string; role: Role } | null;
+
+/** What an employee may do. The owner changes these in Settings → Team. */
+export type StaffPermissions = { deleteBills: boolean; editBills: boolean; removePayments: boolean; markBooked: boolean; discounts: boolean };
+export const DEFAULT_PERMISSIONS: StaffPermissions = { deleteBills: true, editBills: true, removePayments: true, markBooked: true, discounts: true };
+
+/** Bill numbers look like EV-201026-1001 (prefix, day DDMMYY, running number). The running number restarts at `start` every day. */
+export type NumberingSettings = { prefix: string; start: number };
+export const DEFAULT_NUMBERING: NumberingSettings = { prefix: 'EV', start: 1001 };
+
+export type ActivitySettings = { retentionDays: number }; // 0 = keep forever
+export const DEFAULT_ACTIVITY_SETTINGS: ActivitySettings = { retentionDays: 0 };
+
+export type ActivityAction =
+  | 'bill.created' | 'bill.updated' | 'bill.deleted' | 'bill.booked' | 'bill.released'
+  | 'payment.received' | 'payment.removed' | 'payment.request' | 'settings.changed';
+
+export type ActivityChange = { label: string; from?: string; to?: string };
+export type ActivityData = {
+  changes?: ActivityChange[];
+  amount?: number; method?: string; kind?: string; txn?: string; paymentId?: string; balance?: number;
+  total?: number; customer?: string; mobile?: string; eventType?: string; dates?: string; guests?: number;
+  services?: string[]; received?: number;
+};
+export type ActivityEntry = {
+  id: string; at: string; actorEmail: string; actorRole: Role | 'public' | 'system';
+  action: ActivityAction; reference: string; title: string; detail: string; data: ActivityData; legacy?: boolean;
+};
+export type ActivityDraft = Omit<ActivityEntry, 'id' | 'at' | 'actorEmail' | 'actorRole' | 'legacy'>;
+
+export type StaffMember = { id: string; email: string; active: boolean };

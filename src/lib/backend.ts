@@ -4,7 +4,7 @@ import { normalizeEventSlots, occupancyEntries } from './booking';
 import { computeTotals, lineTotal, quoteAdvance } from './pricing';
 import { newId } from './settings';
 import { localISODate } from './format';
-import type { CatalogCategory, Quote, QuoteInput, QuotePricing, QuoteService, QuoteStatus, TimeRange } from './types';
+import { type ActivityDraft, type ActivityEntry, type CatalogCategory, type Quote, type QuoteInput, type QuotePricing, type QuoteService, type QuoteStatus, type Role, type Session, type StaffMember, type TimeRange } from './types';
 
 /**
  * Every screen talks to the database ONLY through this interface.
@@ -13,7 +13,7 @@ import type { CatalogCategory, Quote, QuoteInput, QuotePricing, QuoteService, Qu
  * To move to a Hostinger database later, add a third implementation (e.g. a small REST API in front of MySQL)
  * and return it from getBackend(). No page has to change.
  */
-export type Session = { email: string } | null;
+export type { Session };
 
 export interface Backend {
   mode: 'supabase' | 'api';
@@ -21,7 +21,19 @@ export interface Backend {
   saveCatalog(catalog: CatalogCategory[]): Promise<void>;
   listQuotes(): Promise<Quote[]>;
   getQuote(reference: string): Promise<Quote | null>;
-  createQuote(input: QuoteInput): Promise<Quote>;
+  /** The server gives the bill its number (EV-DDMMYY-1001...). `overrideRef` is honoured for the owner only. */
+  createQuote(input: QuoteInput, overrideRef?: string): Promise<Quote>;
+  /** The number the next bill will get today (nothing is used up). Null when the caller may not ask. */
+  peekBillNumber(): Promise<string | null>;
+  /** Owner only: set the running number for the next bill today. */
+  setNextBillNumber(n: number): Promise<void>;
+  logActivity(draft: ActivityDraft): Promise<void>;
+  listActivity(limit?: number): Promise<ActivityEntry[]>;
+  purgeActivity(beforeISO: string): Promise<number>;
+  canCreateStaff: boolean;
+  listStaff(): Promise<StaffMember[]>;
+  setStaffActive(id: string, active: boolean): Promise<void>;
+  createStaff(email: string, password: string): Promise<void>;
   updateQuote(reference: string, input: QuoteInput): Promise<void>;
   updatePricing(reference: string, pricing: QuotePricing): Promise<void>;
   setStatus(reference: string, status: QuoteStatus): Promise<void>;
@@ -30,7 +42,7 @@ export interface Backend {
   getSettings(key: string): Promise<unknown | null>;
   saveSettings(key: string, data: unknown): Promise<void>;
   getSession(): Promise<Session>;
-  signIn(email: string, password: string): Promise<Session>;
+  signIn(email: string, password: string): Promise<NonNullable<Session>>;
   signOut(): Promise<void>;
   onAuthChange(cb: () => void): () => void;
 }
@@ -76,6 +88,12 @@ const toRow = (input: QuoteInput) => ({
   pricing: { ...input.pricing, eventDates: input.customer.eventDates ?? [input.customer.eventDate], eventSlots: input.customer.eventSlots ?? {} },
 });
 
+type ActivityRow = { id: string; at: string; actor_email: string | null; actor_role: string | null; action: ActivityEntry['action']; reference: string | null; title: string; detail: string | null; data: ActivityEntry['data'] | null };
+const fromActivityRow = (r: ActivityRow): ActivityEntry => ({
+  id: r.id, at: r.at, actorEmail: r.actor_email ?? '', actorRole: (r.actor_role as ActivityEntry['actorRole']) ?? 'system', action: r.action,
+  reference: r.reference ?? '', title: r.title, detail: r.detail ?? '', data: r.data ?? {},
+});
+
 const NOT_ALLOWED = 'The database did not allow this change. Make sure supabase/setup.sql has been run and you are signed in as an admin.';
 
 function makeSupabaseBackend(client: SupabaseClient): Backend {
@@ -100,12 +118,47 @@ function makeSupabaseBackend(client: SupabaseClient): Backend {
       if (error) throw error;
       return data ? fromRow(data as QuoteRow) : null;
     },
-    async createQuote(input) {
-      // No .select(): the public estimator may insert but is not allowed to read quotes back.
-      const { error } = await client.from('quotes').insert({ ...toRow(input), status: 'new' });
+    async createQuote(input, overrideRef) {
+      // Bills are created by a database function so the number is handed out safely (see supabase/setup.sql).
+      const { reference: _r, ...row } = toRow(input);
+      void _r;
+      const { data, error } = await client.rpc('create_quote', { p: row, p_reference: overrideRef?.trim() || null });
       if (error) throw new Error(error.code === '23505' ? 'This bill number already exists. Use a different bill number.' : error.message);
-      return { ...input, id: newId(), createdAt: new Date().toISOString(), status: 'new' };
+      return { ...input, reference: String(data), id: newId(), createdAt: new Date().toISOString(), status: 'new' };
     },
+    async peekBillNumber() {
+      const { data, error } = await client.rpc('peek_bill_number');
+      return error || !data ? null : String(data);
+    },
+    async setNextBillNumber(n) {
+      const { error } = await client.rpc('set_next_bill_number', { n });
+      if (error) throw new Error(error.message);
+    },
+    async logActivity(d) {
+      const { error } = await client.from('activity_log').insert({ action: d.action, reference: d.reference, title: d.title, detail: d.detail, data: d.data });
+      if (error) throw new Error(error.message);
+    },
+    async listActivity(limit = 3000) {
+      const { data, error } = await client.from('activity_log').select('*').order('at', { ascending: false }).limit(limit);
+      if (error) throw error;
+      return (data as ActivityRow[]).map(fromActivityRow);
+    },
+    async purgeActivity(beforeISO) {
+      const { count, error } = await client.from('activity_log').delete({ count: 'exact' }).lt('at', beforeISO);
+      if (error) throw error;
+      return count ?? 0;
+    },
+    canCreateStaff: false,
+    async listStaff() {
+      const { data, error } = await client.from('staff_users').select('user_id,email,active').order('email');
+      if (error) throw error;
+      return (data as { user_id: string; email: string; active: boolean }[]).map((r) => ({ id: r.user_id, email: r.email, active: r.active }));
+    },
+    async setStaffActive(id, active) {
+      const { error } = await client.from('staff_users').update({ active }).eq('user_id', id);
+      if (error) throw error;
+    },
+    async createStaff() { throw new Error('With Supabase, create the employee login in the Supabase dashboard (see Settings → Team).'); },
     async updateQuote(reference, input) {
       const { reference: _ref, ...fields } = toRow(input);
       void _ref;
@@ -148,12 +201,20 @@ function makeSupabaseBackend(client: SupabaseClient): Backend {
     async getSession() {
       const { data, error } = await client.auth.getSession();
       if (error) throw error;
-      return data.session?.user?.email ? { email: data.session.user.email } : null;
+      const email = data.session?.user?.email;
+      if (!email) return null;
+      const { data: role } = await client.rpc('my_role');
+      return role === 'admin' || role === 'staff' ? { email, role: role as Role } : null;
     },
     async signIn(email, password) {
       const { data, error } = await client.auth.signInWithPassword({ email, password });
       if (error) throw error;
-      return { email: data.user?.email ?? email };
+      const { data: role } = await client.rpc('my_role');
+      if (role !== 'admin' && role !== 'staff') {
+        await client.auth.signOut();
+        throw new Error('This account has no access yet, or it was switched off. Please ask the owner.');
+      }
+      return { email: data.user?.email ?? email, role: role as Role };
     },
     async signOut() {
       const { error } = await client.auth.signOut();
@@ -237,7 +298,16 @@ function makeHttpBackend(apiUrl: string): Backend {
     async saveCatalog(catalog) { await call('catalog.save', { categories: catalog }); },
     async listQuotes() { return (await call<Quote[]>('quotes.list')).map(normalizeQuote); },
     async getQuote(reference) { const q = await call<Quote | null>('quotes.get', { reference }); return q ? normalizeQuote(q) : null; },
-    async createQuote(input) { return normalizeQuote(await call<Quote>('quotes.create', input)); },
+    async createQuote(input, overrideRef) { return normalizeQuote(await call<Quote>('quotes.create', { ...input, overrideRef: overrideRef ?? '' })); },
+    async peekBillNumber() { try { return (await call<{ reference: string }>('bill.peek')).reference; } catch { return null; } },
+    async setNextBillNumber(n) { await call('bill.setNext', { n }); },
+    async logActivity(d) { await call('activity.log', d); },
+    async listActivity(limit = 3000) { return call<ActivityEntry[]>('activity.list', { limit }); },
+    async purgeActivity(beforeISO) { return (await call<{ deleted: number }>('activity.purge', { before: beforeISO })).deleted; },
+    canCreateStaff: true,
+    async listStaff() { return call<StaffMember[]>('staff.list'); },
+    async setStaffActive(id, active) { await call('staff.setActive', { id, active }); },
+    async createStaff(email, password) { await call('staff.create', { email, password }); },
     async updateQuote(reference, input) { await call('quotes.update', { reference, input }); },
     async updatePricing(reference, pricing) { await call('quotes.pricing', { reference, pricing }); },
     async setStatus(reference, status) { await call('quotes.status', { reference, status }); },
@@ -247,12 +317,12 @@ function makeHttpBackend(apiUrl: string): Backend {
     async saveSettings(key, data) { await call('settings.save', { key, data }); },
     async getSession() {
       if (!readToken()) return null;
-      try { const r = await call<{ email: string | null }>('auth.me'); return r.email ? { email: r.email } : null; } catch { return null; }
+      try { const r = await call<{ email: string | null; role?: Role }>('auth.me'); return r.email ? { email: r.email, role: r.role ?? 'admin' } : null; } catch { return null; }
     },
     async signIn(email, password) {
-      const r = await call<{ token: string; email: string }>('auth.login', { email, password });
+      const r = await call<{ token: string; email: string; role?: Role }>('auth.login', { email, password });
       writeToken(r.token); notify();
-      return { email: r.email };
+      return { email: r.email, role: r.role ?? 'admin' };
     },
     async signOut() { try { await call('auth.logout'); } catch { /* token may already be invalid */ } writeToken(''); notify(); },
     onAuthChange(cb) { listeners.add(cb); return () => { listeners.delete(cb); }; },

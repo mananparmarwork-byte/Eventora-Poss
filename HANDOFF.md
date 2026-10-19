@@ -73,3 +73,10 @@ Upload this zip, then paste:
 - Login now refreshes the session before opening the dashboard.
 - `npm run build` no longer stops on type errors (run `npm run typecheck` separately to list them).
 Still unverified by a real build: see section 2.
+
+## 8. Update v2 (20 Oct 2026)
+See `UPGRADE-v2.md`. New: report period picker, full activity log + auto-delete, owner/employee roles with permissions, per-day bill numbers (`EV-DDMMYY-1001`), round clock time picker.
+New/changed files: `src/lib/range.ts, activity.ts, useFeed.ts, stats.ts, api.ts, backend.ts, types.ts`; `src/components/TimePicker.tsx, RangePicker.tsx, ActivityList.tsx, DatePicker.tsx, PaymentPanel.tsx`;
+`src/pages/admin/ActivityPage.tsx, SettingsExtra.tsx, Overview.tsx, Reports.tsx, Quotes.tsx, CalendarPage.tsx, SettingsPage.tsx`; `src/pages/Estimator.tsx, Login.tsx`; `src/layouts/AdminLayout.tsx`; `src/App.tsx`;
+`supabase/setup.sql, add-employee.sql`; `hostinger-api/index.php, schema.sql, upgrade-v2.sql`.
+The `Backend` interface was extended (not broken): createQuote(input, overrideRef), peekBillNumber, setNextBillNumber, logActivity, listActivity, purgeActivity, staff methods; Session now has a `role`.

@@ -7,7 +7,7 @@ import { Button, Field, Input } from '@/components/ui';
 import { keys, signIn, useSession } from '@/lib/api';
 
 export function Login() {
-  const { session, loading } = useSession();
+  const { session, loading, isAdmin } = useSession();
   const [, navigate] = useLocation();
   const qc = useQueryClient();
   const [email, setEmail] = useState('');
@@ -15,12 +15,12 @@ export function Login() {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
-  if (!loading && session) return <Redirect to="/admin" />;
+  if (!loading && session) return <Redirect to={isAdmin ? '/admin' : '/admin/new'} />;
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setBusy(true); setError('');
-    try { await signIn(email.trim(), password); await qc.refetchQueries({ queryKey: keys.session }); navigate('/admin'); }
+    try { const s = await signIn(email.trim(), password); await qc.refetchQueries({ queryKey: keys.session }); navigate(s.role === 'admin' ? '/admin' : '/admin/new'); }
     catch (err) { setError(err instanceof Error ? err.message : 'Could not sign in.'); }
     finally { setBusy(false); }
   };
@@ -33,7 +33,7 @@ export function Login() {
         <form onSubmit={submit} className="fade-up rounded-3xl border border-border bg-surface p-8 card-glow">
           <div className="mb-6 flex items-center gap-3">
             <span className="grid size-11 place-items-center rounded-2xl bg-gold/12 text-gold"><Lock size={20} /></span>
-            <div><h1 className="font-display text-2xl font-semibold text-text">Sign in</h1><p className="text-xs text-text-secondary">Admin workspace</p></div>
+            <div><h1 className="font-display text-2xl font-semibold text-text">Sign in</h1><p className="text-xs text-text-secondary">Owner &amp; employee workspace</p></div>
           </div>
           <div className="space-y-4">
             <Field label="Email" required><Input type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@company.com" required /></Field>

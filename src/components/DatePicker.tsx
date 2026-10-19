@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { CalendarDays, Clock, X } from 'lucide-react';
 import { MonthGrid } from './MonthGrid';
-import { Button, Input } from './ui';
+import { Button } from './ui';
+import { TimePicker } from './TimePicker';
 import { cn, fmtDate, parseEventDates, todayISO } from '@/lib/format';
 import { durationText, freeWindows, isFullDayBooked, isRangeComplete, isRangeValid, normalizeRange, rangesOverlap, rangesText } from '@/lib/booking';
 import type { EventSlots, TimeRange } from '@/lib/types';
@@ -74,8 +75,8 @@ export function DatePicker({ value, slots, booked, error, allowPast = [], onChan
                   <button type="button" onClick={() => toggle(date)} aria-label={`Remove ${fmtDate(date)}`} className="grid size-7 place-items-center rounded-lg text-text-secondary hover:bg-surface-hover hover:text-error"><X size={14} /></button>
                 </div>
                 <div className="mt-2.5 grid grid-cols-2 gap-3">
-                  <label className="block"><span className="mb-1 flex items-center gap-1 text-[11px] font-medium text-text-secondary"><Clock size={11} /> From</span><Input type="time" value={range.start} onChange={(e) => setRange(date, { start: e.target.value })} className="h-10" /></label>
-                  <label className="block"><span className="mb-1 flex items-center gap-1 text-[11px] font-medium text-text-secondary"><Clock size={11} /> Till</span><Input type="time" value={range.end} onChange={(e) => setRange(date, { end: e.target.value })} className="h-10" /></label>
+                  <div><span className="mb-1 flex items-center gap-1 text-[11px] font-medium text-text-secondary"><Clock size={11} /> From</span><TimePicker label={`From · ${fmtDate(date, { day: '2-digit', month: 'short' })}`} value={range.start} fallback="18:00" onChange={(v) => setRange(date, { start: v })} /></div>
+                  <div><span className="mb-1 flex items-center gap-1 text-[11px] font-medium text-text-secondary"><Clock size={11} /> Till</span><TimePicker label={`Till · ${fmtDate(date, { day: '2-digit', month: 'short' })}`} value={range.end} fallback={range.start || '23:00'} invalid={complete && !valid} onChange={(v) => setRange(date, { end: v })} /></div>
                 </div>
                 {complete && !valid && <p className="mt-2 text-xs text-error">End time must be after the start time.</p>}
                 {valid && !clash && durationText(range) && <p className="mt-2 text-xs text-text-secondary">Duration: {durationText(range)}</p>}

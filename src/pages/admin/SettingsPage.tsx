@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Building2, Database, FileText, Loader2, Save, Wallet } from 'lucide-react';
+import { Building2, Database, FileClock, FileText, Hash, Loader2, Save, Users, Wallet } from 'lucide-react';
+import { ActivityTab, BillingTab, TeamTab } from './SettingsExtra';
 import { Badge, Button, Card, CardHeader, Field, Input, Switch, Textarea, useUi } from '@/components/ui';
 import { backendMode, useBusiness, usePayment, useSaveSettings } from '@/lib/api';
 import { sampleQuote } from '@/lib/backend';
@@ -8,10 +9,13 @@ import type { BusinessProfile, PaymentSettings } from '@/lib/types';
 import { buildBillBlob, openBlob } from '@/pdf/generate';
 import { cn } from '@/lib/format';
 
-type Tab = 'business' | 'payment' | 'system';
+type Tab = 'business' | 'payment' | 'billing' | 'team' | 'activity' | 'system';
 const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
   { id: 'business', label: 'Business & bills', icon: <Building2 size={16} /> },
   { id: 'payment', label: 'Payments', icon: <Wallet size={16} /> },
+  { id: 'billing', label: 'Bill numbers', icon: <Hash size={16} /> },
+  { id: 'team', label: 'Team', icon: <Users size={16} /> },
+  { id: 'activity', label: 'Activity', icon: <FileClock size={16} /> },
   { id: 'system', label: 'System', icon: <Database size={16} /> },
 ];
 
@@ -119,6 +123,10 @@ export function SettingsPage() {
           <div className="flex justify-end border-t border-border/70 px-5 py-4"><Button variant="gold" onClick={submitPayment} disabled={savePayment.isPending}>{savePayment.isPending ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />} Save payment details</Button></div>
         </Card>
       )}
+
+      {tab === 'billing' && <BillingTab />}
+      {tab === 'team' && <TeamTab />}
+      {tab === 'activity' && <ActivityTab />}
 
       {tab === 'system' && (
         <Card className="max-w-3xl">

@@ -4,7 +4,7 @@ import { CalendarDays } from 'lucide-react';
 import { Card, CardHeader, EmptyState, Spinner } from '@/components/ui';
 import { MonthGrid } from '@/components/MonthGrid';
 import { StatusBadge } from '@/components/PaymentBadge';
-import { useQuotes } from '@/lib/api';
+import { useQuotes, useSession } from '@/lib/api';
 import { fmtDate, inr, cn } from '@/lib/format';
 import { freeWindows, occupancyEntries, rangesText, timeText, toMinutes } from '@/lib/booking';
 import { quoteDates } from '@/lib/pricing';
@@ -27,6 +27,7 @@ function DayBar({ list, tall = false }: { list: Entry[]; tall?: boolean }) {
 
 export function CalendarPage() {
   const { data: quotes = [], isLoading } = useQuotes();
+  const { isAdmin } = useSession();
   const [selected, setSelected] = useState<string | null>(null);
 
   const byDate = useMemo(() => {
@@ -82,7 +83,7 @@ export function CalendarPage() {
                     <Link href={`/admin/quotes/${encodeURIComponent(e.quote.reference)}`} className="block rounded-xl border border-border bg-input/50 p-3.5 transition-colors hover:border-gold/60">
                       <div className="flex items-start justify-between gap-2"><p className="text-sm font-semibold text-text">{e.quote.customer.name}</p><StatusBadge status={e.quote.status} /></div>
                       <p className="mt-1 text-xs text-text-secondary">{e.quote.customer.eventType} · {e.timeKnown ? timeText(e.range) : 'Time not set (whole day held)'}</p>
-                      <p className="mt-1 text-xs text-text-disabled">{e.quote.reference} · {e.quote.customer.guests} guests · {inr(e.quote.pricing.grandTotal)}</p>
+                      <p className="mt-1 text-xs text-text-disabled">{e.quote.reference} · {e.quote.customer.guests} guests{isAdmin ? ` · ${inr(e.quote.pricing.grandTotal)}` : ''}</p>
                     </Link>
                   </li>
                 ))}
