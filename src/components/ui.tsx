@@ -25,15 +25,17 @@ export function Button({ variant = 'outline', size = 'md', className, children, 
 }
 
 /* ------------------------------------------------------------------ Fields --- */
-const control = 'w-full rounded-xl border border-border bg-input px-3.5 text-sm text-text transition-colors hover:border-steel-blue/70 focus:border-gold focus:outline-none disabled:opacity-50';
+const control = 'rounded-xl border border-border bg-input px-3.5 text-sm text-text transition-colors hover:border-steel-blue/70 focus:border-gold focus:outline-none disabled:opacity-50';
+/** Default width / height only when the caller did not choose their own (two competing Tailwind classes would be decided by stylesheet order, not by us). */
+const sized = (className: string | undefined, h = 'h-11') => cn(/(^|\s)w-/.test(className ?? '') ? '' : 'w-full', /(^|\s)h-/.test(className ?? '') ? '' : h);
 export function Input({ className, ...rest }: InputHTMLAttributes<HTMLInputElement>) {
-  return <input {...rest} className={cn(control, 'h-11', className)} />;
+  return <input {...rest} className={cn(control, sized(className), className)} />;
 }
 export function Select({ className, children, ...rest }: SelectHTMLAttributes<HTMLSelectElement>) {
-  return <select {...rest} className={cn(control, 'h-11 appearance-none bg-[length:16px] bg-[right_12px_center] bg-no-repeat pr-9', className)} style={{ backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23B8C2D4' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")" }}>{children}</select>;
+  return <select {...rest} className={cn(control, sized(className), 'appearance-none bg-[length:16px] bg-[right_12px_center] bg-no-repeat pr-9', className)} style={{ backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23B8C2D4' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")" }}>{children}</select>;
 }
 export function Textarea({ className, ...rest }: TextareaHTMLAttributes<HTMLTextAreaElement>) {
-  return <textarea {...rest} className={cn(control, 'min-h-24 py-3', className)} />;
+  return <textarea {...rest} className={cn(control, 'w-full min-h-24 py-3', className)} />;
 }
 export function Field({ label, required, hint, error, children, className, as = 'label' }: { label: string; required?: boolean; hint?: string; error?: string; children: ReactNode; className?: string; as?: 'label' | 'div' }) {
   const Wrapper = as;

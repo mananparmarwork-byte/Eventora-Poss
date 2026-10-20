@@ -96,6 +96,21 @@ const fromActivityRow = (r: ActivityRow): ActivityEntry => ({
 
 const NOT_ALLOWED = 'The database did not allow this change. Make sure supabase/setup.sql has been run and you are signed in as an admin.';
 
+/** Asks the database who is signed in. Falls back to the admin_users table if my_role() cannot be called, and says what went wrong. */
+async function lookupRole(client: SupabaseClient): Promise<{ role: Role | 'none'; problem: string }> {
+  const { data, error } = await client.rpc('my_role');
+  if (!error && (data === 'admin' || data === 'staff' || data === 'none')) return { role: data, problem: '' };
+  const { data: u } = await client.auth.getUser();
+  const id = u.user?.id;
+  if (id) {
+    const a = await client.from('admin_users').select('user_id').eq('user_id', id).maybeSingle();
+    if (a.data) return { role: 'admin', problem: '' };
+    const t = await client.from('staff_users').select('user_id,active').eq('user_id', id).maybeSingle();
+    if (t.data) return { role: t.data.active ? 'staff' : 'none', problem: '' };
+  }
+  return { role: 'none', problem: error ? error.message : '' };
+}
+
 function makeSupabaseBackend(client: SupabaseClient): Backend {
   return {
     mode: 'supabase',
@@ -203,18 +218,18 @@ function makeSupabaseBackend(client: SupabaseClient): Backend {
       if (error) throw error;
       const email = data.session?.user?.email;
       if (!email) return null;
-      const { data: role } = await client.rpc('my_role');
-      return role === 'admin' || role === 'staff' ? { email, role: role as Role } : null;
+      const { role } = await lookupRole(client);
+      return role === 'admin' || role === 'staff' ? { email, role } : null;
     },
     async signIn(email, password) {
       const { data, error } = await client.auth.signInWithPassword({ email, password });
       if (error) throw error;
-      const { data: role } = await client.rpc('my_role');
+      const { role, problem } = await lookupRole(client);
       if (role !== 'admin' && role !== 'staff') {
         await client.auth.signOut();
-        throw new Error('This account has no access yet, or it was switched off. Please ask the owner.');
+        throw new Error(problem ? `Signed in, but the database could not confirm your role: ${problem}. Run the latest supabase/setup.sql.` : 'This account has no access yet, or it was switched off. Please ask the owner.');
       }
-      return { email: data.user?.email ?? email, role: role as Role };
+      return { email: data.user?.email ?? email, role };
     },
     async signOut() {
       const { error } = await client.auth.signOut();
