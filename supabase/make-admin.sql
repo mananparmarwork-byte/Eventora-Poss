@@ -2,5 +2,5 @@
 -- 1) Supabase → Authentication → Users → "Add user" (email + password, tick "Auto confirm").
 -- 2) Put that email below and run this file in the SQL Editor.
 insert into public.admin_users (user_id)
-select id from auth.users where email = 'YOUR-EMAIL@example.com'
+select id from auth.users where email = 'mp1072005@gmail.com'
 on conflict do nothing;

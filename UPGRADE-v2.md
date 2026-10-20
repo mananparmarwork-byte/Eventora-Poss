@@ -1,7 +1,7 @@
 # Eventora OS — update v2 (what changed and how to switch it on)
 
 ## 1. Do these steps once
-1. **Supabase → SQL Editor → run the new `supabase/setup.sql`** (it is safe to run again; nothing is deleted).
+1. **Supabase → SQL Editor → run, in this order, each as a new query:** `supabase/01-tables.sql`, `02-roles-and-security.sql`, `03-bill-numbers-and-calendar.sql`, then `04-check.sql` (every row must say OK). Run `make-admin.sql` if the check says you are not the owner. (`setup.sql` is the same thing in one file.) All are safe to run again.
 2. Push this code to GitHub as usual (the deploy workflow rebuilds the site).
 3. Open **Settings → Bill numbers** and check the prefix / first number (default `EV` and `1001`).
 4. Add employees: **Settings → Team → Add an employee** shows the exact two steps (create the user in Supabase, then run one SQL line).
