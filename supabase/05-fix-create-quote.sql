@@ -1,11 +1,11 @@
--- ============================================================================
+¯-- ============================================================================
 -- Eventora OS — FIX: "Could not find the function public.create_quote(p, p_reference) in the schema cache"
 --
 -- Why it happened: the app saves a quotation by calling the database function
 --   public.create_quote(p jsonb, p_reference text)
 -- but that function was never created in your live Supabase project (the SQL files were only partly run).
 -- Your live `quotes` table is also missing the column `customer_gst_number`, which the app writes and reads.
---
+--¯
 -- What this file does (and does NOT do):
 --   * ADDS the missing column (existing rows and data are untouched; nothing is dropped, reset or rewritten).
 --   * Creates bill_counters / activity_log ONLY IF they do not exist yet.
