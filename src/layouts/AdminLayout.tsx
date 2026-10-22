@@ -1,6 +1,6 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { Link, Redirect, useLocation } from 'wouter';
-import { BarChart3, CalendarDays, ChevronsLeft, ChevronsRight, FileClock, FilePlus2, FileText, Layers, LayoutDashboard, LogOut, Menu, Plus, Settings, X } from 'lucide-react';
+import { BarChart3, CalendarDays, ChevronsLeft, ChevronsRight, FileClock, FilePlus2, FileText, Layers, LayoutDashboard, LogOut, Menu, Plus, Settings, ShieldCheck, X } from 'lucide-react';
 import { Brand } from '@/components/Logo';
 import { Button, Spinner, useUi } from '@/components/ui';
 import { signOut, useSession } from '@/lib/api';
@@ -16,12 +16,26 @@ const NAV = [
   { href: '/admin/catalog', label: 'Catalog', icon: Layers, owner: true },
   { href: '/admin/reports', label: 'Reports', icon: BarChart3, owner: true },
   { href: '/admin/settings', label: 'Settings', icon: Settings, owner: true },
+  { href: '/admin/account', label: 'My account', icon: ShieldCheck },
 ] as { href: string; label: string; staffLabel?: string; icon: typeof Layers; exact?: boolean; owner?: boolean; staffOnly?: boolean }[];
 
 const TITLES: [string, string][] = [
   ['/admin/new', 'New quotation'], ['/admin/edit', 'Edit quotation'], ['/admin/quotes', 'Quotations'], ['/admin/calendar', 'Calendar'], ['/admin/activity', 'Activity'],
-  ['/admin/catalog', 'Catalog'], ['/admin/reports', 'Reports'], ['/admin/settings', 'Settings'], ['/admin', 'Overview'],
+  ['/admin/catalog', 'Catalog'], ['/admin/reports', 'Reports'], ['/admin/settings', 'Settings'], ['/admin/account', 'My account'], ['/admin', 'Overview'],
 ];
+
+const IDLE_MINUTES = 30;
+/** Signs the person out after 30 minutes without any activity (protects a phone or counter PC left open). */
+function useIdleSignOut(active: boolean, onIdle: () => void) {
+  useEffect(() => {
+    if (!active) return;
+    let timer = window.setTimeout(onIdle, IDLE_MINUTES * 60_000);
+    const reset = () => { window.clearTimeout(timer); timer = window.setTimeout(onIdle, IDLE_MINUTES * 60_000); };
+    const events = ['mousemove', 'keydown', 'click', 'touchstart', 'scroll'] as const;
+    events.forEach((e) => window.addEventListener(e, reset, { passive: true }));
+    return () => { window.clearTimeout(timer); events.forEach((e) => window.removeEventListener(e, reset)); };
+  }, [active, onIdle]);
+}
 
 function readCollapsed() { try { return window.localStorage.getItem('eventora-sidebar') === '1'; } catch { return false; } }
 
@@ -33,6 +47,8 @@ export function AdminLayout({ children, ownerOnly = false }: { children: ReactNo
   const { toast } = useUi();
 
   useEffect(() => { setDrawer(false); window.scrollTo({ top: 0 }); }, [location]);
+  const idleOut = useCallback(() => { void signOut().finally(() => { toast('You were signed out after 30 minutes without activity.', 'info'); navigate('/login'); }); }, [navigate, toast]);
+  useIdleSignOut(Boolean(session), idleOut);
   const toggle = () => setCollapsed((c) => { try { window.localStorage.setItem('eventora-sidebar', c ? '0' : '1'); } catch { /* ignore */ } return !c; });
 
   if (loading) return <div className="min-h-dvh bg-page"><Spinner label="Checking your session" /></div>;

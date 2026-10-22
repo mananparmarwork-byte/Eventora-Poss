@@ -105,8 +105,9 @@ export type Role = 'admin' | 'staff';
 export type Session = { email: string; role: Role } | null;
 
 /** What an employee may do. The owner changes these in Settings → Team. */
-export type StaffPermissions = { deleteBills: boolean; editBills: boolean; removePayments: boolean; markBooked: boolean; discounts: boolean };
-export const DEFAULT_PERMISSIONS: StaffPermissions = { deleteBills: true, editBills: true, removePayments: true, markBooked: true, discounts: true };
+/** `deleteBills` is always false: employees can never delete a bill (the database enforces it, no switch exists). */
+export type StaffPermissions = { deleteBills: boolean; editBills: boolean; removePayments: boolean; markBooked: boolean; discounts: boolean; viewAllBills: boolean };
+export const DEFAULT_PERMISSIONS: StaffPermissions = { deleteBills: false, editBills: true, removePayments: true, markBooked: true, discounts: true, viewAllBills: true };
 
 /** Bill numbers look like EV-201026-1001 (prefix, day DDMMYY, running number). The running number restarts at `start` every day. */
 export type NumberingSettings = { prefix: string; start: number };

@@ -111,7 +111,7 @@ function Detail({ reference }: { reference: string }) {
   const { isAdmin } = useSession();
   const { permissions } = usePermissions();
   const canEdit = isAdmin || permissions.editBills;
-  const canDelete = isAdmin || permissions.deleteBills;
+  const canDelete = isAdmin; // employees can never delete bills
   const canBook = isAdmin || permissions.markBooked;
   const [busy, setBusy] = useState<BillKind | null>(null);
 

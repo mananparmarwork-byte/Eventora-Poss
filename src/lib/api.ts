@@ -132,9 +132,19 @@ export function useStaffActions() {
   return {
     setActive: useMutation({ mutationFn: (v: { id: string; active: boolean }) => be().setStaffActive(v.id, v.active), onSuccess: refresh }),
     create: useMutation({ mutationFn: (v: { email: string; password: string }) => be().createStaff(v.email, v.password), onSuccess: refresh }),
+    remove: useMutation({ mutationFn: (id: string) => { const f = be().deleteStaff; if (!f) throw new Error('Deleting employees is not available on this database.'); return f.call(be(), id); }, onSuccess: refresh }),
+    resetPassword: useMutation({ mutationFn: (v: { id: string; password: string }) => { const f = be().resetStaffPassword; if (!f) throw new Error('Password reset is not available on this database.'); return f.call(be(), v.id, v.password); } }),
   };
 }
 export const canCreateStaff = () => be().canCreateStaff;
+export const canManageStaff = () => Boolean(be().deleteStaff && be().resetStaffPassword);
+
+/** Account security: password, two-step verification, sign out everywhere. Undefined where the database does not offer them. */
+export const accountApi = () => {
+  const b = be();
+  return { changePassword: b.changePassword?.bind(b), signOutEverywhere: b.signOutEverywhere?.bind(b), mfa: b.mfa };
+};
+export const verifyMfa = (factorId: string, code: string) => { const b = be(); if (!b.verifyMfa) throw new Error('Two-step verification is not available.'); return b.verifyMfa(factorId, code); };
 
 export function useBookedTimes() {
   return useQuery({ queryKey: keys.booked, queryFn: () => be().bookedTimes(), staleTime: 20_000, refetchOnWindowFocus: true, retry: false });

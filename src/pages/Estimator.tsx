@@ -220,6 +220,7 @@ export function Estimator({ embedded = false, editRef = '' }: { embedded?: boole
 
   const save = () => {
     if (editing && !editQuote) return;
+    if (!session) { toast('Please sign in as the owner or an employee to save a quotation.', 'error'); navigate('/login'); return; }
     if (!validate()) return;
     const input = buildInput();
     const done = (q: Quote) => {
@@ -414,7 +415,7 @@ export function Estimator({ embedded = false, editRef = '' }: { embedded?: boole
             {saved ? (
               <div className="rounded-xl border border-success/30 bg-success-bg p-4 text-sm text-success"><p className="flex items-center gap-2 font-semibold"><Check size={16} /> Saved as {saved.reference}</p></div>
             ) : (
-              <Button variant="gold" size="lg" className="w-full" onClick={save} disabled={saving}>{saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} {editing ? 'Save changes' : 'Save quotation'}</Button>
+              <Button variant="gold" size="lg" className="w-full" onClick={save} disabled={saving}>{saving ? <Loader2 size={16} className="animate-spin" /> : session ? <Save size={16} /> : <LogIn size={16} />} {editing ? 'Save changes' : session ? 'Save quotation' : 'Sign in to save'}</Button>
             )}
             <div className="grid grid-cols-2 gap-2.5">
               <Button variant="outline" onClick={downloadPdf} disabled={pdfBusy}>{pdfBusy ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />} PDF</Button>

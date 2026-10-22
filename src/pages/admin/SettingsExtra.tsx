@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Copy, Loader2, Save, ShieldCheck, Trash2, UserPlus } from 'lucide-react';
+import { Copy, KeyRound, Loader2, Lock, Save, ShieldCheck, Trash2, UserPlus } from 'lucide-react';
 import { Badge, Button, Card, CardHeader, Field, Input, Switch, useUi } from '@/components/ui';
-import { canCreateStaff, useActivitySettings, useLogActivity, useNextBillNumber, useNumbering, usePermissions, usePurgeActivity, useSaveGeneric, useSetNextBillNumber, useStaff, useStaffActions } from '@/lib/api';
+import { canCreateStaff, canManageStaff, useActivitySettings, useLogActivity, useNextBillNumber, useNumbering, usePermissions, usePurgeActivity, useSaveGeneric, useSetNextBillNumber, useStaff, useStaffActions } from '@/lib/api';
 import { cn } from '@/lib/format';
 import type { ActivityDraft, NumberingSettings, StaffPermissions } from '@/lib/types';
+import { passwordProblem } from './AccountPage';
 
 const changed = (title: string, detail: string): ActivityDraft => ({ action: 'settings.changed', reference: '', title, detail, data: {} });
 const ddmmyy = () => { const d = new Date(); return `${String(d.getDate()).padStart(2, '0')}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getFullYear()).slice(2)}`; };
@@ -64,13 +65,27 @@ export function BillingTab() {
 }
 
 /* -------------------------------------------------------------------- Team --- */
-const PERMS: { key: keyof StaffPermissions; label: string; text: string }[] = [
-  { key: 'deleteBills', label: 'Delete bills', text: 'The bill number stays used. Every deletion is logged.' },
+// "Delete bills" is not a switch any more: employees can NEVER delete a bill (the database refuses it).
+const PERMS: { key: Exclude<keyof StaffPermissions, 'deleteBills'>; label: string; text: string }[] = [
+  { key: 'viewAllBills', label: 'See bills made by others', text: 'Off = an employee sees only the bills they created themselves.' },
   { key: 'editBills', label: 'Edit bills', text: 'Change customer, services, dates. The bill number can never change.' },
   { key: 'removePayments', label: 'Cancel received payments', text: 'Remove a payment that was recorded. Logged with the amount.' },
   { key: 'markBooked', label: 'Mark as booked / release booking', text: 'Blocks or frees the event dates.' },
   { key: 'discounts', label: 'Give discounts', text: 'Use the discount fields while making a bill.' },
 ];
+
+/** A strong random password the owner can hand to the employee (they can change it under My account). */
+function generatePassword(): string {
+  const letters = 'abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ';
+  const digits = '23456789';
+  const all = letters + digits;
+  const buf = new Uint32Array(12);
+  window.crypto.getRandomValues(buf);
+  const chars = Array.from(buf, (n) => all[n % all.length]);
+  chars[0] = letters[buf[0] % letters.length];
+  chars[1] = digits[buf[1] % digits.length];
+  return chars.join('');
+}
 
 export function TeamTab() {
   const { toast, confirm } = useUi();
@@ -81,19 +96,32 @@ export function TeamTab() {
   const actions = useStaffActions();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [resetFor, setResetFor] = useState('');
+  const [newPw, setNewPw] = useState('');
   const api = canCreateStaff();
+  const manage = canManageStaff();
+  const pwProblem = password ? passwordProblem(password) : '';
 
-  const toggle = (key: keyof StaffPermissions, v: boolean) => {
-    savePerms.mutate({ ...permissions, [key]: v }, { onSuccess: () => { void log(changed('Employee permissions changed', `${PERMS.find((p) => p.key === key)?.label}: ${v ? 'allowed' : 'not allowed'}`)); }, onError: (e) => toast(e.message, 'error') });
+  const toggle = (key: (typeof PERMS)[number]['key'], v: boolean) => {
+    savePerms.mutate({ ...permissions, deleteBills: false, [key]: v }, { onSuccess: () => { void log(changed('Employee permissions changed', `${PERMS.find((p) => p.key === key)?.label}: ${v ? 'allowed' : 'not allowed'}`)); }, onError: (e) => toast(e.message, 'error') });
   };
   const create = () => {
-    actions.create.mutate({ email: email.trim(), password }, { onSuccess: () => { toast('Employee login created.'); void log(changed('Employee added', email.trim())); setEmail(''); setPassword(''); }, onError: (e) => toast(e.message, 'error') });
+    const mail = email.trim();
+    actions.create.mutate({ email: mail, password }, { onSuccess: () => { toast(`Login created for ${mail}. Give them the password; they can change it under My account.`); void log(changed('Employee added', mail)); setEmail(''); setPassword(''); }, onError: (e) => toast(e.message, 'error') });
   };
   const sql = `insert into public.staff_users (user_id, email)\nselect id, email from auth.users where email = '${email.trim() || 'EMPLOYEE-EMAIL@example.com'}'\non conflict (user_id) do update set active = true;`;
   const copy = async () => { try { await navigator.clipboard.writeText(sql); toast('SQL copied.'); } catch { toast('Copy is blocked in this browser.', 'error'); } };
+  const copyPw = async () => { try { await navigator.clipboard.writeText(password); toast('Password copied.'); } catch { toast('Copy is blocked in this browser.', 'error'); } };
   const switchActive = async (id: string, mail: string, active: boolean) => {
     if (!active && !(await confirm({ title: `Switch off ${mail}?`, text: 'They will not be able to sign in or see anything until you switch them on again.', confirmLabel: 'Switch off', danger: true }))) return;
     actions.setActive.mutate({ id, active }, { onSuccess: () => { toast(active ? 'Employee switched on.' : 'Employee switched off.', 'info'); void log(changed(active ? 'Employee switched on' : 'Employee switched off', mail)); }, onError: (e) => toast(e.message, 'error') });
+  };
+  const remove = async (id: string, mail: string) => {
+    if (!(await confirm({ title: `Delete ${mail}?`, text: 'Their login is removed for good and cannot be undone. Bills they created stay, and still show who made them. To keep the login but block it, use the switch instead.', confirmLabel: 'Delete login', danger: true }))) return;
+    actions.remove.mutate(id, { onSuccess: () => { toast('Employee login deleted.', 'info'); void log(changed('Employee deleted', mail)); }, onError: (e) => toast(e.message, 'error') });
+  };
+  const doReset = (id: string, mail: string) => {
+    actions.resetPassword.mutate({ id, password: newPw }, { onSuccess: () => { toast(`New password set for ${mail}.`); void log(changed('Employee password reset', mail)); setResetFor(''); setNewPw(''); }, onError: (e) => toast(e.message, 'error') });
   };
 
   return (
@@ -101,21 +129,38 @@ export function TeamTab() {
       <Card>
         <CardHeader title="What employees can do" subtitle="Always allowed: make bills, take payments, see the calendar and estimate cost" />
         <div className="space-y-4 p-5">
+          <div className="flex items-start gap-3 rounded-xl border border-gold/30 bg-gold/[0.06] p-3.5">
+            <Lock size={16} className="mt-0.5 shrink-0 text-gold" />
+            <div><p className="text-sm font-medium text-text">Delete bills — owner only</p><p className="text-xs text-text-secondary">Once a bill is created, no employee can delete it. This is enforced by the database and cannot be switched on.</p></div>
+          </div>
           {PERMS.map((p) => <Switch key={p.key} checked={permissions[p.key]} onChange={(v) => toggle(p.key, v)} label={p.label} description={p.text} />)}
           <div className="gold-rule" />
-          <p className="flex items-start gap-2 text-xs text-text-secondary"><ShieldCheck size={15} className="mt-0.5 shrink-0 text-gold" /> Only you see Overview, Activity, Reports, Catalog and Settings. Employees never see them.</p>
+          <p className="flex items-start gap-2 text-xs text-text-secondary"><ShieldCheck size={15} className="mt-0.5 shrink-0 text-gold" /> Only you see Overview, Activity, Reports, Catalog and Settings. Employees never see them. Everything they do is written to Activity.</p>
         </div>
       </Card>
 
       <div className="space-y-6">
         <Card>
           <CardHeader title="Employees" subtitle="People who can sign in with limited access" />
-          {staff.isLoading ? <p className="p-5 text-sm text-text-secondary">Loading…</p> : staff.error ? <p className="p-5 text-sm text-error">{(staff.error as Error).message}. Run the latest supabase/setup.sql.</p> : (staff.data ?? []).length === 0 ? <p className="p-5 text-sm text-text-secondary">No employees yet.</p> : (
+          {staff.isLoading ? <p className="p-5 text-sm text-text-secondary">Loading…</p> : staff.error ? <p className="p-5 text-sm text-error">{(staff.error as Error).message}. Run the latest supabase SQL files.</p> : (staff.data ?? []).length === 0 ? <p className="p-5 text-sm text-text-secondary">No employees yet.</p> : (
             <ul className="divide-y divide-border/60">
               {(staff.data ?? []).map((m) => (
-                <li key={m.id} className="flex items-center justify-between gap-3 px-5 py-3">
-                  <span className="min-w-0"><span className="block truncate text-sm font-medium text-text">{m.email}</span><Badge tone={m.active ? 'success' : 'neutral'} className="mt-1">{m.active ? 'Active' : 'Switched off'}</Badge></span>
-                  <Switch checked={m.active} onChange={(v) => void switchActive(m.id, m.email, v)} />
+                <li key={m.id} className="px-5 py-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="min-w-0"><span className="block truncate text-sm font-medium text-text">{m.email}</span><Badge tone={m.active ? 'success' : 'neutral'} className="mt-1">{m.active ? 'Active' : 'Switched off'}</Badge></span>
+                    <span className="flex shrink-0 items-center gap-1">
+                      {manage && <Button variant="ghost" size="sm" title="Set a new password" onClick={() => { setResetFor(resetFor === m.id ? '' : m.id); setNewPw(''); }}><KeyRound size={14} /></Button>}
+                      {manage && <Button variant="ghost" size="sm" title="Delete this login" onClick={() => void remove(m.id, m.email)} disabled={actions.remove.isPending}><Trash2 size={14} className="text-error" /></Button>}
+                      <Switch checked={m.active} onChange={(v) => void switchActive(m.id, m.email, v)} />
+                    </span>
+                  </div>
+                  {resetFor === m.id && (
+                    <div className="mt-3 flex flex-wrap items-end gap-2 rounded-xl bg-input p-3">
+                      <Field label="New password" hint="10+ characters, letter and number" error={newPw ? passwordProblem(newPw) : ''} className="min-w-[200px] flex-1"><Input type="text" autoComplete="off" value={newPw} onChange={(e) => setNewPw(e.target.value)} /></Field>
+                      <Button variant="outline" size="sm" onClick={() => setNewPw(generatePassword())}>Generate</Button>
+                      <Button variant="gold" size="sm" onClick={() => doReset(m.id, m.email)} disabled={actions.resetPassword.isPending || !newPw || Boolean(passwordProblem(newPw))}>{actions.resetPassword.isPending ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Save</Button>
+                    </div>
+                  )}
                 </li>
               ))}
             </ul>
@@ -123,13 +168,18 @@ export function TeamTab() {
         </Card>
 
         <Card>
-          <CardHeader title="Add an employee" subtitle={api ? 'Creates their login right here' : 'Two quick steps in Supabase'} />
+          <CardHeader title="Add an employee" subtitle={api ? 'Creates their login right here — no SQL needed' : 'Two quick steps in Supabase'} />
           <div className="space-y-4 p-5">
-            <Field label="Employee email"><Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="name@gmail.com" /></Field>
+            <Field label="Employee email"><Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="name@gmail.com" autoComplete="off" /></Field>
             {api ? (
               <>
-                <Field label="Password" hint="at least 8 characters"><Input type="text" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="off" /></Field>
-                <Button variant="gold" className="w-full" onClick={create} disabled={actions.create.isPending || !email.trim() || password.length < 8}>{actions.create.isPending ? <Loader2 size={15} className="animate-spin" /> : <UserPlus size={15} />} Create employee login</Button>
+                <Field label="Password" hint="10+ characters, with a letter and a number" error={pwProblem}><Input type="text" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="off" /></Field>
+                <div className="flex gap-2">
+                  <Button variant="outline" size="sm" onClick={() => setPassword(generatePassword())}>Generate strong password</Button>
+                  {password && <Button variant="ghost" size="sm" onClick={() => void copyPw()}><Copy size={14} /> Copy</Button>}
+                </div>
+                <Button variant="gold" className="w-full" onClick={create} disabled={actions.create.isPending || !email.trim() || !password || Boolean(pwProblem)}>{actions.create.isPending ? <Loader2 size={15} className="animate-spin" /> : <UserPlus size={15} />} Create employee login</Button>
+                <p className="text-xs text-text-disabled">The employee can only sign in with the email and password you set. There is no public sign-up. They can change the password and turn on two-step verification under My account.</p>
               </>
             ) : (
               <>

@@ -45,6 +45,30 @@ export interface Backend {
   signIn(email: string, password: string): Promise<NonNullable<Session>>;
   signOut(): Promise<void>;
   onAuthChange(cb: () => void): () => void;
+  /* Optional extras (Supabase). The screens show the matching buttons only when a backend provides them. */
+  /** Owner only: delete an employee's login completely. Bills they created stay. */
+  deleteStaff?(id: string): Promise<void>;
+  /** Owner only: set a new password for an employee. */
+  resetStaffPassword?(id: string, password: string): Promise<void>;
+  /** The signed-in person changes their own password. */
+  changePassword?(newPassword: string): Promise<void>;
+  /** Ends this person's sessions on every device. */
+  signOutEverywhere?(): Promise<void>;
+  /** Second step of sign-in when two-step verification is on. */
+  verifyMfa?(factorId: string, code: string): Promise<NonNullable<Session>>;
+  /** Two-step verification (authenticator app) for the signed-in person. */
+  mfa?: {
+    status(): Promise<{ enabled: boolean; factorId: string }>;
+    enroll(): Promise<{ factorId: string; qrSvg: string; secret: string }>;
+    confirm(factorId: string, code: string): Promise<void>;
+    disable(factorId: string): Promise<void>;
+  };
+}
+
+/** Thrown by signIn when the password was right but a code from the authenticator app is still needed. */
+export class MfaRequiredError extends Error {
+  factorId: string;
+  constructor(factorId: string) { super('Enter the 6-digit code from your authenticator app.'); this.name = 'MfaRequiredError'; this.factorId = factorId; }
 }
 
 /* ------------------------------------------------------------------ Supabase */
@@ -94,6 +118,20 @@ const fromActivityRow = (r: ActivityRow): ActivityEntry => ({
   reference: r.reference ?? '', title: r.title, detail: r.detail ?? '', data: r.data ?? {},
 });
 
+const STAFF_FN_MISSING = 'The employee service is not set up yet. Deploy the "manage-staff" function once (see SETUP-TEAM-AND-SECURITY.md).';
+/** Calls the owner-only "manage-staff" Edge Function (it holds the secret key on the server, never in the browser). */
+async function callStaffFn(client: SupabaseClient, body: Record<string, unknown>): Promise<void> {
+  const { data, error } = await client.functions.invoke('manage-staff', { body });
+  if (error) {
+    const ctx = (error as { context?: Response }).context;
+    if (error.name === 'FunctionsFetchError' || ctx?.status === 404) throw new Error(STAFF_FN_MISSING);
+    let msg = error.message;
+    if (ctx && typeof ctx.json === 'function') { try { const j = (await ctx.json()) as { error?: string; message?: string }; msg = j.error ?? j.message ?? msg; } catch { /* keep default */ } }
+    throw new Error(msg);
+  }
+  if (data && typeof data === 'object' && 'error' in data && (data as { error?: string }).error) throw new Error(String((data as { error: string }).error));
+}
+
 const NOT_ALLOWED = 'The database did not allow this change. Make sure supabase/setup.sql has been run and you are signed in as an admin.';
 
 /** Asks the database who is signed in. Falls back to the admin_users table if my_role() cannot be called, and says what went wrong. */
@@ -109,6 +147,16 @@ async function lookupRole(client: SupabaseClient): Promise<{ role: Role | 'none'
     if (t.data) return { role: t.data.active ? 'staff' : 'none', problem: '' };
   }
   return { role: 'none', problem: error ? error.message : '' };
+}
+
+/** Last step of every sign-in: ask the database which role this person has, and refuse people with none. */
+async function finishSignIn(client: SupabaseClient, email: string): Promise<NonNullable<Session>> {
+  const { role, problem } = await lookupRole(client);
+  if (role !== 'admin' && role !== 'staff') {
+    await client.auth.signOut();
+    throw new Error(problem ? `Signed in, but the database could not confirm your role: ${problem}. Run the latest supabase SQL files.` : 'This account has no access, or it was switched off. Please ask the owner.');
+  }
+  return { email, role };
 }
 
 function makeSupabaseBackend(client: SupabaseClient): Backend {
@@ -163,7 +211,7 @@ function makeSupabaseBackend(client: SupabaseClient): Backend {
       if (error) throw error;
       return count ?? 0;
     },
-    canCreateStaff: false,
+    canCreateStaff: true,
     async listStaff() {
       const { data, error } = await client.from('staff_users').select('user_id,email,active').order('email');
       if (error) throw error;
@@ -173,7 +221,9 @@ function makeSupabaseBackend(client: SupabaseClient): Backend {
       const { error } = await client.from('staff_users').update({ active }).eq('user_id', id);
       if (error) throw error;
     },
-    async createStaff() { throw new Error('With Supabase, create the employee login in the Supabase dashboard (see Settings → Team).'); },
+    async createStaff(email, password) { await callStaffFn(client, { action: 'create', email, password }); },
+    async deleteStaff(id) { await callStaffFn(client, { action: 'delete', id }); },
+    async resetStaffPassword(id, password) { await callStaffFn(client, { action: 'resetPassword', id, password }); },
     async updateQuote(reference, input) {
       const { reference: _ref, ...fields } = toRow(input);
       void _ref;
@@ -224,12 +274,52 @@ function makeSupabaseBackend(client: SupabaseClient): Backend {
     async signIn(email, password) {
       const { data, error } = await client.auth.signInWithPassword({ email, password });
       if (error) throw error;
-      const { role, problem } = await lookupRole(client);
-      if (role !== 'admin' && role !== 'staff') {
-        await client.auth.signOut();
-        throw new Error(problem ? `Signed in, but the database could not confirm your role: ${problem}. Run the latest supabase/setup.sql.` : 'This account has no access yet, or it was switched off. Please ask the owner.');
+      // Two-step verification: with a verified authenticator, the database gives no access until the code is entered.
+      const aal = await client.auth.mfa.getAuthenticatorAssuranceLevel();
+      if (aal.data && aal.data.nextLevel === 'aal2' && aal.data.currentLevel !== 'aal2') {
+        const factors = await client.auth.mfa.listFactors();
+        const factor = factors.data?.totp?.[0];
+        if (factor) throw new MfaRequiredError(factor.id);
       }
-      return { email: data.user?.email ?? email, role };
+      return finishSignIn(client, data.user?.email ?? email);
+    },
+    async verifyMfa(factorId, code) {
+      const { error } = await client.auth.mfa.challengeAndVerify({ factorId, code: code.replace(/\s/g, '') });
+      if (error) throw new Error('That code is not correct or has expired. Try the newest code.');
+      const { data } = await client.auth.getUser();
+      return finishSignIn(client, data.user?.email ?? '');
+    },
+    async changePassword(newPassword) {
+      const { error } = await client.auth.updateUser({ password: newPassword });
+      if (error) throw new Error(error.message);
+    },
+    async signOutEverywhere() {
+      const { error } = await client.auth.signOut({ scope: 'global' });
+      if (error) throw error;
+    },
+    mfa: {
+      async status() {
+        const { data, error } = await client.auth.mfa.listFactors();
+        if (error) throw new Error(error.message);
+        const f = data.totp[0];
+        return { enabled: Boolean(f), factorId: f?.id ?? '' };
+      },
+      async enroll() {
+        // Remove half-finished attempts first, otherwise a new attempt is refused.
+        const all = await client.auth.mfa.listFactors();
+        for (const f of all.data?.all ?? []) if (f.status === 'unverified') await client.auth.mfa.unenroll({ factorId: f.id });
+        const { data, error } = await client.auth.mfa.enroll({ factorType: 'totp', friendlyName: `Eventora ${new Date().toISOString().slice(0, 10)}` });
+        if (error) throw new Error(error.message);
+        return { factorId: data.id, qrSvg: data.totp.qr_code, secret: data.totp.secret };
+      },
+      async confirm(factorId, code) {
+        const { error } = await client.auth.mfa.challengeAndVerify({ factorId, code: code.replace(/\s/g, '') });
+        if (error) throw new Error('That code is not correct or has expired. Try the newest code.');
+      },
+      async disable(factorId) {
+        const { error } = await client.auth.mfa.unenroll({ factorId });
+        if (error) throw new Error(error.message);
+      },
     },
     async signOut() {
       const { error } = await client.auth.signOut();

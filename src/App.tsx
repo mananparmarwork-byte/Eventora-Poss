@@ -5,6 +5,9 @@ import { UiProvider, Button } from '@/components/ui';
 import { AdminLayout } from '@/layouts/AdminLayout';
 import { isBackendConfigured } from '@/lib/backend';
 import { Estimator } from '@/pages/Estimator';
+import { AccountPage } from '@/pages/admin/AccountPage';
+import { Spinner } from '@/components/ui';
+import { useSession } from '@/lib/api';
 import { Login } from '@/pages/Login';
 import { Overview } from '@/pages/admin/Overview';
 import { Quotes } from '@/pages/admin/Quotes';
@@ -38,10 +41,18 @@ function NotFound() {
       <div>
         <p className="font-display text-6xl font-semibold text-gold">404</p>
         <p className="mt-2 text-text-secondary">That page does not exist.</p>
-        <a href="#/" className="mt-6 inline-block text-sm text-gold hover:underline">Back to the estimator</a>
+        <a href="#/" className="mt-6 inline-block text-sm text-gold hover:underline">Back to sign in</a>
       </div>
     </main>
   );
+}
+
+/** Nothing is shown to visitors: the front door sends everyone to the sign-in page, or to their workspace when already signed in. */
+function Home() {
+  const { session, loading, isAdmin } = useSession();
+  if (loading) return <div className="min-h-dvh bg-page"><Spinner label="Checking your session" /></div>;
+  if (!session) return <Redirect to="/login" />;
+  return <Redirect to={isAdmin ? '/admin' : '/admin/new'} />;
 }
 
 function SetupRequired() {
@@ -68,13 +79,14 @@ export default function App() {
         {/* Hash routing (#/admin) keeps every link working on GitHub Pages and on Hostinger without any server rewrite rules. */}
         <Router hook={useHashLocation}>
           <Switch>
-            <Route path="/"><Estimator /></Route>
+            <Route path="/"><Home /></Route>
             <Route path="/login"><Login /></Route>
             <Route path="/admin"><AdminLayout ownerOnly><Overview /></AdminLayout></Route>
             <Route path="/admin/quotes"><AdminLayout><Quotes /></AdminLayout></Route>
             <Route path="/admin/quotes/:reference">{(p) => <AdminLayout><Quotes selected={decodeURIComponent(p.reference)} /></AdminLayout>}</Route>
             <Route path="/admin/new"><AdminLayout><Estimator embedded /></AdminLayout></Route>
             <Route path="/admin/edit/:reference">{(p) => <AdminLayout><Estimator embedded editRef={decodeURIComponent(p.reference)} /></AdminLayout>}</Route>
+            <Route path="/admin/account"><AdminLayout><AccountPage /></AdminLayout></Route>
             <Route path="/admin/calendar"><AdminLayout><CalendarPage /></AdminLayout></Route>
             <Route path="/admin/catalog"><AdminLayout ownerOnly><CatalogPage /></AdminLayout></Route>
             <Route path="/admin/activity"><AdminLayout ownerOnly><ActivityPage /></AdminLayout></Route>
